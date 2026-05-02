@@ -1,0 +1,242 @@
+[
+  {
+    "query_id": "F001",
+    "query": "What is the default chunk size used during document ingestion?",
+    "query_type": "factoid",
+    "expected_answer": "The default chunk size is 512 tokens with a 50-token overlap.",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "F002",
+    "query": "Which embedding model is used for generating document embeddings?",
+    "query_type": "factoid",
+    "expected_answer": "sentence-transformers/all-MiniLM-L6-v2",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "F003",
+    "query": "What LLM is used for query-time reasoning?",
+    "query_type": "factoid",
+    "expected_answer": "Groq-hosted LLaMA-3.3-70B-Versatile is used for query-time reasoning.",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "F004",
+    "query": "What graph database is used to store entity relationships?",
+    "query_type": "factoid",
+    "expected_answer": "Neo4j is used to store entities and relationships.",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "F005",
+    "query": "What vector database is used for semantic similarity search?",
+    "query_type": "factoid",
+    "expected_answer": "FAISS (Facebook AI Similarity Search) is used for vector embeddings.",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "MH001",
+    "query": "Which team owns the system that caused last quarter's major incident?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires tracing: Incident -> caused_by -> System -> owns -> Team.",
+    "required_sources": [],
+    "requires_hops": 3
+  },
+  {
+    "query_id": "MH002",
+    "query": "What policies are violated by the systems that the infrastructure team depends on?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires: Team -> part_of -> System ->depends_on -> System -> violates -> Policy.",
+    "required_sources": [],
+    "requires_hops": 4
+  },
+  {
+    "query_id": "MH003",
+    "query": "Who approved the procurement policy that was violated in the Q3 budget incident?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires: Incident -> violates -> Policy -> owns -> Person.",
+    "required_sources": [],
+    "requires_hops": 3
+  },
+  {
+    "query_id": "MH004",
+    "query": "Which code modules implement the policies owned by the security team?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires: Team -> owns -> Policy <- implements <- CodeModule.",
+    "required_sources": [],
+    "requires_hops": 3
+  },
+  {
+    "query_id": "MH005",
+    "query": "Which persons report to the manager responsible for the payment service outage?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires: Incident -> caused_by -> System -> owns -> Person <- reports_to <- Person.",
+    "required_sources": [],
+    "requires_hops": 4
+  },
+  {
+    "query_id": "MH006",
+    "query": "What systems are affected by incidents that violate data retention policies?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires: Policy <- violates <- Incident -> caused_by -> System.",
+    "required_sources": [],
+    "requires_hops": 3
+  },
+  {
+    "query_id": "MH007",
+    "query": "Which documents mention all systems that depend on the authentication service?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires: System -> depends_on -> System <- mentions <- Document.",
+    "required_sources": [],
+    "requires_hops": 3
+  },
+  {
+    "query_id": "MH008",
+    "query": "Which team members are associated with the service that had a SLA breach last month?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires: Incident -> caused_by -> System -> owns -> Team -> part_of -> Person.",
+    "required_sources": [],
+    "requires_hops": 4
+  },
+  {
+    "query_id": "H3001",
+    "query": "Trace the full responsibility chain for the database outage incident from last year.",
+    "query_type": "multi-hop",
+    "expected_answer": "Full chain: Incident -> caused_by -> System -> depends_on -> System -> owns -> Person -> reports_to -> Person.",
+    "required_sources": [],
+    "requires_hops": 5
+  },
+  {
+    "query_id": "H3002",
+    "query": "Which executives ultimately own the systems involved in compliance violations this year?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires 4+ hops through Incident -> Policy -> System -> Person -> reports_to -> Person chain.",
+    "required_sources": [],
+    "requires_hops": 5
+  },
+  {
+    "query_id": "H3003",
+    "query": "What are all the downstream systems affected when the authentication service fails?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires recursive depends_on traversal starting from authentication service.",
+    "required_sources": [],
+    "requires_hops": 4
+  },
+  {
+    "query_id": "H3004",
+    "query": "Find all code modules that transitively implement security policies through their dependent services.",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires: CodeModule -> implements -> Policy; Service -> depends_on -> Service -> violates -> Policy.",
+    "required_sources": [],
+    "requires_hops": 4
+  },
+  {
+    "query_id": "H3005",
+    "query": "Which employees are most connected to incidents involving GDPR policy violations?",
+    "query_type": "multi-hop",
+    "expected_answer": "Requires traversal through Incident-Policy-System-Team-Person nodes.",
+    "required_sources": [],
+    "requires_hops": 5
+  },
+  {
+    "query_id": "H3006",
+    "query": "Map the complete dependency chain from the frontend service to its database systems.",
+    "query_type": "multi-hop",
+    "expected_answer": "Chain of depends_on relationships from frontend service through middleware to databases.",
+    "required_sources": [],
+    "requires_hops": 4
+  },
+  {
+    "query_id": "H3007",
+    "query": "Which documents capture all incidents connected to systems owned by the platform team?",
+    "query_type": "multi-hop",
+    "expected_answer": "Team -> owns -> System <- caused_by <- Incident <- mentions <- Document.",
+    "required_sources": [],
+    "requires_hops": 4
+  },
+  {
+    "query_id": "P001",
+    "query": "What is the data retention policy for customer records?",
+    "query_type": "policy",
+    "expected_answer": "Customer records must be retained for 7 years per company data governance policy.",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "P002",
+    "query": "What is the incident response procedure for a P1 outage?",
+    "query_type": "policy",
+    "expected_answer": "P1 incidents require immediate escalation within 15 minutes and executive notification within 1 hour.",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "P003",
+    "query": "Is it policy violation to share internal API keys externally?",
+    "query_type": "policy",
+    "expected_answer": "Yes, sharing internal API keys externally violates the secrets management policy.",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "P004",
+    "query": "What approval is required before deploying to production?",
+    "query_type": "policy",
+    "expected_answer": "Production deployments require sign-off from both the team lead and a security reviewer.",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "P005",
+    "query": "Which teams are required to undergo annual security training?",
+    "query_type": "policy",
+    "expected_answer": "All engineering, operations, and data teams must complete annual security awareness training.",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "C001",
+    "query": "Compare the response time of the legacy authentication service vs the new SSO system.",
+    "query_type": "comparative",
+    "expected_answer": "Legacy auth averages 250ms; new SSO system averages 45ms — a 5x improvement.",
+    "required_sources": [],
+    "requires_hops": 2
+  },
+  {
+    "query_id": "C002",
+    "query": "Which incident management approach — automated vs manual — has a lower MTTR?",
+    "query_type": "comparative",
+    "expected_answer": "Automated incident management achieves MTTR of 22 minutes vs 4.5 hours for manual processes.",
+    "required_sources": [],
+    "requires_hops": 2
+  },
+  {
+    "query_id": "C003",
+    "query": "How does the FAISS vector store performance compare to keyword search for enterprise queries?",
+    "query_type": "comparative",
+    "expected_answer": "FAISS achieves 85% precision@10 vs 61% for keyword search on enterprise document sets.",
+    "required_sources": [],
+    "requires_hops": 2
+  },
+  {
+    "query_id": "CD001",
+    "query": "What does the entity_extractor module return and what is its input format?",
+    "query_type": "code",
+    "expected_answer": "entity_extractor.extract_from_chunks() accepts a list of DocumentChunk objects and returns a list of ExtractedEntity dataclasses.",
+    "required_sources": [],
+    "requires_hops": 1
+  },
+  {
+    "query_id": "CD002",
+    "query": "How does the HybridRetriever merge vector and graph results?",
+    "query_type": "code",
+    "expected_answer": "HybridRetriever.merge() deduplicates by chunk_id, normalizes scores to 0-1, applies weighted fusion (60% vector, 40% graph), and returns ranked HybridResult list.",
+    "required_sources": [],
+    "requires_hops": 1
+  }
+]

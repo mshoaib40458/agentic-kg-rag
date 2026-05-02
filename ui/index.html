@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KG-RAG Enterprise Assistant</title>
+  <meta name="description" content="Agentic Knowledge Graph RAG System — Ask complex enterprise questions with verifiable, multi-hop reasoning." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ── Login Modal ──────────────────────────────────────────── -->
+<div id="login-modal" class="modal-overlay">
+  <div class="modal-card glass-card">
+    <div class="modal-header">
+      <div class="logo-mark">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="15" stroke="url(#grad1)" stroke-width="2"/>
+          <path d="M8 16 L16 8 L24 16 L16 24 Z" fill="url(#grad1)" opacity="0.8"/>
+          <circle cx="16" cy="16" r="4" fill="#fff"/>
+          <defs>
+            <linearGradient id="grad1" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#6366f1"/>
+              <stop offset="1" stop-color="#8b5cf6"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <h1>KG-RAG Assistant</h1>
+      <p>Enterprise Intelligence Platform</p>
+    </div>
+    <form id="login-form" class="login-form">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input id="username" type="text" placeholder="admin" autocomplete="username" required />
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" required />
+      </div>
+      <div id="login-error" class="error-msg hidden"></div>
+      <button type="submit" class="btn-primary" id="login-btn">
+        <span>Sign In</span>
+        <div class="spinner hidden" id="login-spinner"></div>
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Main App ─────────────────────────────────────────────── -->
+<div id="app" class="app hidden">
+
+  <!-- Sidebar -->
+  <aside class="sidebar glass-sidebar">
+    <div class="sidebar-logo">
+      <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="15" stroke="url(#grad2)" stroke-width="2"/>
+        <path d="M8 16 L16 8 L24 16 L16 24 Z" fill="url(#grad2)" opacity="0.8"/>
+        <circle cx="16" cy="16" r="4" fill="#fff"/>
+        <defs>
+          <linearGradient id="grad2" x1="0" y1="0" x2="32" y2="32">
+            <stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>KG-RAG</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" id="nav-chat" onclick="switchView('chat')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Chat
+      </button>
+      <button class="nav-item" id="nav-upload" onclick="switchView('upload')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+        Ingest
+      </button>
+      <button class="nav-item" id="nav-graph" onclick="switchView('graph')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="5" r="3"/><circle cx="19" cy="5" r="3"/><circle cx="12" cy="19" r="3"/><line x1="7.5" y1="6.5" x2="10" y2="17"/><line x1="16.5" y1="6.5" x2="14" y2="17"/></svg>
+        Graph
+      </button>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-pill">
+        <div class="user-avatar" id="user-avatar">A</div>
+        <div class="user-info">
+          <span id="user-name-display">admin</span>
+          <span id="user-role-display" class="role-badge">admin</span>
+        </div>
+      </div>
+      <button class="btn-ghost logout-btn" onclick="logout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Chat View ───────────────────────────────────────────── -->
+  <main class="main-content">
+    <div id="view-chat" class="view active">
+      <div class="chat-container">
+
+        <!-- Messages area -->
+        <div class="messages-area" id="messages-area">
+          <div class="welcome-screen" id="welcome-screen">
+            <div class="welcome-icon">
+              <svg width="64" height="64" viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="16" r="15" stroke="url(#grad3)" stroke-width="1.5" opacity="0.5"/>
+                <path d="M8 16 L16 8 L24 16 L16 24 Z" fill="url(#grad3)" opacity="0.6"/>
+                <circle cx="16" cy="16" r="4" fill="white" opacity="0.9"/>
+                <defs>
+                  <linearGradient id="grad3" x1="0" y1="0" x2="32" y2="32">
+                    <stop stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <h2>Ask your enterprise knowledge base</h2>
+            <p>Multi-hop reasoning across documents, policies, incidents, and systems.</p>
+            <div class="example-queries">
+              <button class="example-chip" onclick="useExample(this)">Who owns the system that caused last week's incident?</button>
+              <button class="example-chip" onclick="useExample(this)">What policies are violated by current system dependencies?</button>
+              <button class="example-chip" onclick="useExample(this)">Which teams depend on the Auth Service?</button>
+              <button class="example-chip" onclick="useExample(this)">Summarize Q3 procurement policy violations</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reasoning Trace Panel -->
+        <div class="reasoning-panel" id="reasoning-panel">
+          <div class="reasoning-header" onclick="toggleReasoning()">
+            <div class="reasoning-title">
+              <div class="pulse-dot" id="reasoning-pulse"></div>
+              <span>Agent Reasoning Trace</span>
+            </div>
+            <svg class="chevron" id="reasoning-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="18 15 12 9 6 15"/>
+            </svg>
+          </div>
+          <div class="reasoning-body" id="reasoning-body">
+            <div id="reasoning-steps"></div>
+          </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-area">
+          <div class="input-wrapper">
+            <textarea
+              id="query-input"
+              placeholder="Ask anything about your enterprise knowledge base..."
+              rows="1"
+              onkeydown="handleKeyDown(event)"
+              oninput="autoResize(this)"
+            ></textarea>
+            <div class="input-controls">
+              <span class="mode-badge" id="stream-mode-badge">⚡ Stream</span>
+              <button class="send-btn" id="send-btn" onclick="sendQuery()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="input-meta">
+            <span id="session-id-display"></span>
+            <span>Groq LLaMA-3.3-70B • KG-RAG v1.0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Citations Panel -->
+      <aside class="citations-panel glass-card" id="citations-panel">
+        <div class="citations-header">
+          <span>Sources</span>
+          <button class="btn-ghost" onclick="closeCitations()">✕</button>
+        </div>
+        <div id="citations-list"></div>
+      </aside>
+    </div>
+
+    <!-- ── Upload View ────────────────────────────────────────── -->
+    <div id="view-upload" class="view hidden">
+      <div class="view-content">
+        <h2 class="view-title">Document Ingestion</h2>
+        <p class="view-subtitle">Upload enterprise documents to the knowledge base.</p>
+        <div class="upload-zone" id="upload-zone"
+             ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
+             onclick="document.getElementById('file-input').click()">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+          </svg>
+          <p>Drag & drop files here or <strong>click to browse</strong></p>
+          <p class="upload-hint">PDF, DOCX, TXT, MD, HTML — up to 50MB</p>
+          <input id="file-input" type="file" multiple accept=".pdf,.docx,.txt,.md,.html" hidden onchange="handleFileSelect(event)" />
+        </div>
+        <div id="upload-queue" class="upload-queue"></div>
+        <div id="upload-results" class="upload-results"></div>
+      </div>
+    </div>
+
+    <!-- ── Graph View ─────────────────────────────────────────── -->
+    <div id="view-graph" class="view hidden">
+      <div class="view-content">
+        <h2 class="view-title">Knowledge Graph Explorer</h2>
+        <p class="view-subtitle">Visualize entity relationships in the knowledge graph.</p>
+        <div class="graph-stats" id="graph-stats">
+          <div class="stat-card glass-card">
+            <div class="stat-value" id="stat-entities">–</div>
+            <div class="stat-label">Entities</div>
+          </div>
+          <div class="stat-card glass-card">
+            <div class="stat-value" id="stat-relations">–</div>
+            <div class="stat-label">Relationships</div>
+          </div>
+          <div class="stat-card glass-card">
+            <div class="stat-value" id="stat-vectors">–</div>
+            <div class="stat-label">Vectors</div>
+          </div>
+        </div>
+        <div class="graph-query-box glass-card">
+          <h3>Run Entity Query</h3>
+          <div class="graph-input-row">
+            <input type="text" id="graph-entity-input" placeholder="Entity name (e.g. Auth Service)" class="graph-input" />
+            <button class="btn-primary" onclick="queryGraph()">Explore</button>
+          </div>
+          <div id="graph-results-display" class="graph-results"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+# Environment
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+.venv/
+venv/
+env/
+
+# FAISS Index (binary, can be regenerated)
+data/faiss_index/
+data/faiss_index.bin
+data/faiss_metadata.json
+
+# Logs
+logs/
+*.log
+*.jsonl
+
+# Uploads / data
+data/documents/
+data/uploads/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+reports/
+
+# Docker
+*.override.yml

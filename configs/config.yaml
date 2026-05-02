@@ -1,0 +1,111 @@
+# KG-RAG System Configuration
+# All values here can be overridden by environment variables in .env
+
+system:
+  name: "KG-RAG Enterprise Assistant"
+  version: "1.0.0"
+  environment: "development"  # development | production
+
+# ── LLM Config ────────────────────────────────────────────────
+llm:
+  query_model: "llama-3.3-70b-versatile"
+  ingest_model: "llama-3.1-8b-instant"
+  temperature: 0.0
+  max_tokens: 4096
+  max_retries: 3
+  retry_delay: 2.0  # seconds
+
+# ── Embedding Config ──────────────────────────────────────────
+embedding:
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  dimension: 384
+  batch_size: 64
+
+# ── Ingestion Config ──────────────────────────────────────────
+ingestion:
+  chunk_size: 512          # tokens
+  chunk_overlap: 50        # tokens
+  supported_formats:
+    - ".pdf"
+    - ".docx"
+    - ".txt"
+    - ".md"
+    - ".html"
+  max_upload_size_mb: 50
+  documents_path: "data/documents"
+
+# ── Vector Store Config ───────────────────────────────────────
+vector_store:
+  index_path: "data/faiss_index"
+  metadata_path: "data/faiss_metadata.json"
+  top_k: 10
+  similarity_threshold: 0.7
+
+# ── Knowledge Graph Config ────────────────────────────────────
+knowledge_graph:
+  hop_depth: 3
+  max_paths: 50
+  cypher_limit: 50         # max nodes returned by any generated Cypher
+  entity_types:
+    - "Person"
+    - "Team"
+    - "System"
+    - "Policy"
+    - "Incident"
+    - "Date"
+    - "Document"
+    - "CodeModule"
+    - "Metric"
+  relationship_types:
+    - "owns"
+    - "depends_on"
+    - "caused_by"
+    - "violates"
+    - "part_of"
+    - "mentions"
+    - "implements"
+    - "reports_to"
+
+# ── Retrieval Config ──────────────────────────────────────────
+retrieval:
+  vector_top_k: 10
+  graph_top_k: 10
+  rerank_top_k: 5
+  reranker_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+# ── Agent Config ──────────────────────────────────────────────
+agent:
+  max_iterations: 3        # max re-planning cycles
+  max_tool_calls: 10       # per query
+  query_types:
+    - "factoid"
+    - "multi-hop"
+    - "comparative"
+    - "policy"
+    - "temporal"
+    - "code"
+
+# ── Security Config ───────────────────────────────────────────
+security:
+  roles:
+    - "admin"
+    - "user"
+    - "auditor"
+  jwt_expiry_hours: 24
+  rate_limit_per_minute: 60
+
+# ── Evaluation Config ─────────────────────────────────────────
+evaluation:
+  eval_set_path: "data/eval/queries.json"
+  output_path: "reports/eval_report.json"
+  metrics:
+    - "answer_correctness"
+    - "faithfulness"
+    - "context_relevancy"
+    - "citation_accuracy"
+    - "multihop_success_rate"
+
+# ── Cache Config ──────────────────────────────────────────────
+cache:
+  ttl_seconds: 3600
+  max_query_cache_size: 1000
