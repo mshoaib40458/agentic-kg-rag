@@ -94,7 +94,8 @@ class KGBuilder:
                             e.created_at = timestamp(),
                             e.source_doc_ids = [$doc_id],
                             e.source_chunk_ids = [$chunk_id],
-                            e.context = $context
+                            e.context = $context,
+                            e.labels = [$type]
                         ON MATCH SET
                             e.source_doc_ids = CASE
                                 WHEN NOT $doc_id IN e.source_doc_ids
@@ -106,10 +107,12 @@ class KGBuilder:
                                 THEN e.source_chunk_ids + [$chunk_id]
                                 ELSE e.source_chunk_ids
                             END,
-                            e.updated_at = timestamp()
-                        WITH e
-                        CALL apoc.create.addLabels(e, [$type]) YIELD node
-                        RETURN node
+                            e.updated_at = timestamp(),
+                            e.labels = CASE
+                                WHEN NOT $type IN e.labels
+                                THEN e.labels + [$type]
+                                ELSE e.labels
+                            END
                         """,
                         name=entity.name,
                         type=entity.entity_type,
@@ -119,28 +122,7 @@ class KGBuilder:
                     )
                     count += 1
                 except Exception as e:
-                    # Fallback without APOC if not available
-                    try:
-                        session.run(
-                            """
-                            MERGE (e:Entity {name: $name, type: $type})
-                            ON CREATE SET
-                                e.created_at = timestamp(),
-                                e.source_doc_ids = [$doc_id],
-                                e.source_chunk_ids = [$chunk_id],
-                                e.context = $context
-                            ON MATCH SET
-                                e.updated_at = timestamp()
-                            """,
-                            name=entity.name,
-                            type=entity.entity_type,
-                            doc_id=entity.source_doc_id,
-                            chunk_id=entity.source_chunk_id,
-                            context=entity.context,
-                        )
-                        count += 1
-                    except Exception as e2:
-                        logger.error(f"Failed to write entity '{entity.name}': {e2}")
+                    logger.error(f"Failed to write entity '{entity.name}': {e}")
 
         logger.info(f"✓ Wrote {count} entities to Neo4j")
         return count

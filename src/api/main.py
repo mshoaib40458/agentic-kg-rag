@@ -5,7 +5,7 @@ Entry point with middleware, CORS, rate limiting, and OpenAPI docs.
 Production Fixes Applied:
 - JWT_SECRET_KEY guard: raises RuntimeError if default insecure key is used
 - Singleton AgentOrchestrator: built once at startup, shared across all requests
-- Richer /health endpoint: includes cache_available and graph_connected status
+- Richer /health endpoint: includes cache_available, graph_connected, groq_available, embedding_available, reranker_available status
 """
 
 import os
@@ -38,19 +38,16 @@ limiter = Limiter(key_func=get_remote_address)
 # ── App State (shared instances) ───────────────────────────────
 app_state = {}
 
-# ── Insecure default secret (never use in production) ──────────
-_INSECURE_DEFAULT_SECRET = "change-this-in-production-minimum-32-chars-required"
-
 
 def _validate_configuration() -> None:
     """
     Validate critical configuration at startup.
     Raises RuntimeError if required settings are insecure or missing.
     """
-    secret = os.getenv("JWT_SECRET_KEY", _INSECURE_DEFAULT_SECRET)
-    if secret == _INSECURE_DEFAULT_SECRET:
+    secret = os.getenv("JWT_SECRET_KEY")
+    if not secret:
         raise RuntimeError(
-            "🚨 FATAL: JWT_SECRET_KEY is set to the insecure default value. "
+            "🚨 FATAL: JWT_SECRET_KEY environment variable is not set. "
             "Set a strong, unique secret in your .env file before starting the server. "
             "Minimum 32 characters recommended."
         )
@@ -137,7 +134,44 @@ async def lifespan(app: FastAPI):
     app_state["orchestrator"] = orchestrator
 
     # Warm up the cache connection (non-blocking — cache.py handles failures gracefully)
-    _ = query_cache.is_available
+    _ = await query_cache.check_available()
+
+    # ── Health checks for external dependencies ──────────────────
+    groq_available = False
+    embedding_available = False
+    reranker_available = False
+
+    # Check Groq API
+    try:
+        groq_client.chat.completions.create(
+            model=os.getenv("LLM_QUERY_MODEL", "llama-3.3-70b-versatile"),
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=5,
+            temperature=0.0,
+        )
+        groq_available = True
+        logger.info("✓ Groq API connectivity verified")
+    except Exception as e:
+        logger.warning(f"⚠ Groq API check failed: {e}")
+
+    # Check embedding model
+    try:
+        _ = embedder.get_dimension()
+        embedding_available = True
+        logger.info("✓ Embedding model loaded successfully")
+    except Exception as e:
+        logger.warning(f"⚠ Embedding model check failed: {e}")
+
+    # Check reranker model
+    try:
+        reranker._load_model()
+        if reranker._model is not None:
+            reranker_available = True
+            logger.info("✓ Cross-encoder reranker loaded successfully")
+        else:
+            logger.warning("⚠ Cross-encoder reranker not available (will use score fallback)")
+    except Exception as e:
+        logger.warning(f"⚠ Reranker model check failed: {e}")
 
     logger.info("✓ All services initialized")
     yield
@@ -160,6 +194,20 @@ app = FastAPI(
 # Attach rate limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "type": "about:blank",
+            "title": "Internal Server Error",
+            "status": 500,
+            "detail": "An unexpected error occurred while processing the request.",
+            "instance": request.url.path,
+        },
+    )
 
 # ── CORS ────────────────────────────────────────────────────────
 origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",") if o.strip()]
@@ -193,6 +241,8 @@ async def health_check():
     """System health check endpoint."""
     vs = app_state.get("vector_store")
     gr = app_state.get("graph_retriever")
+    embedder = app_state.get("embedder")
+    groq_client = app_state.get("groq_client")
     stats = vs.get_stats() if vs else {}
 
     # Check graph connectivity (non-blocking)
@@ -205,12 +255,43 @@ async def health_check():
         except Exception:
             graph_connected = False
 
+    # Check Groq API connectivity
+    groq_connected = False
+    if groq_client:
+        try:
+            # Lightweight call to verify API key works
+            groq_client.models.list()
+            groq_connected = True
+        except Exception:
+            groq_connected = False
+
+    # Check embedding model
+    embedding_loaded = False
+    if embedder:
+        try:
+            _ = embedder.get_dimension()
+            embedding_loaded = True
+        except Exception:
+            embedding_loaded = False
+
+    # Check reranker model
+    reranker_loaded = False
+    try:
+        from sentence_transformers import CrossEncoder
+        CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        reranker_loaded = True
+    except Exception:
+        reranker_loaded = False
+
     return {
         "status": "healthy",
         "version": "1.0.0",
         "vector_store": stats,
-        "cache_available": query_cache.is_available,
+        "cache_available": await query_cache.check_available(),
         "graph_connected": graph_connected,
+        "groq_connected": groq_connected,
+        "embedding_loaded": embedding_loaded,
+        "reranker_loaded": reranker_loaded,
     }
 
 

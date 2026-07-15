@@ -101,7 +101,7 @@ async def ingest_document(
             run_kg_extraction=True,
         )
 
-        result = pipeline.ingest_file(
+        result = await pipeline.ingest_file(
             file_path=str(save_path),
             metadata={
                 "access_level": access_level,

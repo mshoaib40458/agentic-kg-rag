@@ -73,6 +73,12 @@ class VectorStore:
             json.dump(self._metadata, f, ensure_ascii=False, indent=2)
         logger.info(f"✓ Saved FAISS index ({self._index.ntotal} vectors) to {self.index_path}")
 
+    async def save_async(self):
+        """Persist FAISS index and metadata to disk asynchronously."""
+        import asyncio
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.save)
+
     def load(self):
         """Load FAISS index and metadata from disk."""
         index_file = self.index_path.with_suffix(".bin")
@@ -86,6 +92,12 @@ class VectorStore:
                 self._metadata = json.load(f)
 
         logger.info(f"✓ Loaded FAISS index ({self._index.ntotal} vectors) from {self.index_path}")
+
+    async def load_async(self):
+        """Load FAISS index and metadata from disk asynchronously."""
+        import asyncio
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.load)
 
     # ── Write Operations ───────────────────────────────────────
 
@@ -139,34 +151,43 @@ class VectorStore:
 
         logger.info(f"Added {len(chunks)} chunks to FAISS in-memory index. Total: {index.ntotal}")
 
-    def delete_by_doc_id(self, doc_id: str) -> int:
+    def delete_by_doc_id(self, doc_id: str, soft_delete: bool = False) -> int:
         """
-        Remove all chunks for a given doc_id and rebuild the FAISS index.
-        FAISS-CPU flat index does not support in-place deletion, so we rebuild.
-        Uses locking to prevent concurrent modification.
+        Remove all chunks for a given doc_id.
 
         Args:
             doc_id: Document ID to remove.
+            soft_delete: If True, mark chunks as deleted (tombstone) instead of rebuilding index.
+                        Much faster for large indexes but increases search latency slightly.
 
         Returns:
-            Number of chunks removed.
+            Number of chunks removed/marked.
         """
         with self._lock:  # Prevent concurrent access during rebuild
             if self._index is None or self._index.ntotal == 0:
                 return 0
 
-            # Find which positions to keep
+            # Find which positions to keep/delete
             keep_indices = [i for i, m in enumerate(self._metadata) if m.get("doc_id") != doc_id]
             removed_count = len(self._metadata) - len(keep_indices)
 
             if removed_count == 0:
                 return 0
 
+            if soft_delete:
+                # Soft delete: mark as deleted in metadata (tombstone)
+                for i, m in enumerate(self._metadata):
+                    if m.get("doc_id") == doc_id:
+                        m["_deleted"] = True
+                self.save()
+                logger.info(f"Soft-deleted {removed_count} chunks for doc_id={doc_id} (tombstone)")
+                return removed_count
+
+            # Hard delete: rebuild index (original behavior)
             # Rebuild metadata list
             new_metadata = [self._metadata[i] for i in keep_indices]
 
             # Rebuild FAISS index by extracting kept vectors
-            # faiss.IndexFlatIP supports reconstruct(i) for vector extraction
             new_index = faiss.IndexFlatIP(self.embedding_dim)
             
             failed_reconstructions = 0
@@ -191,7 +212,7 @@ class VectorStore:
                 logger.error(f"Failed to save after delete: {e} — index may be inconsistent")
                 raise
 
-            logger.info(f"Deleted {removed_count} chunks for doc_id={doc_id}. Remaining: {new_index.ntotal}")
+            logger.info(f"Hard-deleted {removed_count} chunks for doc_id={doc_id}. Remaining: {new_index.ntotal}")
             return removed_count
 
 
@@ -235,6 +256,10 @@ class VectorStore:
                     continue
 
                 meta = self._metadata[idx]
+
+                # Skip soft-deleted (tombstone) entries
+                if meta.get("_deleted"):
+                    continue
 
                 # RBAC filter
                 if user_role not in meta.get("access_roles", []):

@@ -25,6 +25,7 @@ from src.audit.logger import audit_logger
 from src.agent.orchestrator import AgentOrchestrator
 from src.retrieval.cache import query_cache
 from src.monitoring.metrics import record_query, record_cache_hit, record_cache_miss, record_agent_iteration
+from src.exceptions import GraphRetrievalError, KGException
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -113,7 +114,7 @@ async def query_endpoint(
     start_time = time.time()
 
     # ── Cache lookup ────────────────────────────────────────
-    cached_state = query_cache.get(request.query, current_user.user_id)
+    cached_state = await query_cache.get(request.query, current_user.user_id, session_id, request.top_k)
     if cached_state is not None:
         duration_ms = (time.time() - start_time) * 1000
         record_cache_hit()
@@ -149,14 +150,23 @@ async def query_endpoint(
     orchestrator = _get_orchestrator()
 
     try:
-        state = orchestrator.run(
+        state = await orchestrator.run(
             query=request.query,
             user_id=current_user.user_id,
             user_role=current_user.role,
             session_id=session_id,
             conversation_history=request.conversation_history or [],
         )
-    except Exception as e:
+    except GraphRetrievalError as e:
+        logger.error(f"Graph retrieval failed: {e}")
+        audit_logger.log_error(
+            user_id=current_user.user_id,
+            session_id=session_id,
+            error_type="graph_retrieval_failure",
+            error_message=str(e),
+        )
+        raise HTTPException(status_code=503, detail="Knowledge graph temporarily unavailable")
+    except KGException as e:
         logger.error(f"Agent run failed: {e}")
         audit_logger.log_error(
             user_id=current_user.user_id,
@@ -165,6 +175,15 @@ async def query_endpoint(
             error_message=str(e),
         )
         raise HTTPException(status_code=500, detail=f"Agent error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected agent error: {e}", exc_info=True)
+        audit_logger.log_error(
+            user_id=current_user.user_id,
+            session_id=session_id,
+            error_type="unexpected_error",
+            error_message=str(e),
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     duration_ms = (time.time() - start_time) * 1000
 
@@ -201,7 +220,7 @@ async def query_endpoint(
 
     # ── Cache result ────────────────────────────────────────
     if not state.get("fallback_used") and not state.get("error"):
-        query_cache.set(request.query, current_user.user_id, state)
+        await query_cache.set(request.query, current_user.user_id, state, session_id, request.top_k)
 
     return QueryResponse(
         session_id=session_id,

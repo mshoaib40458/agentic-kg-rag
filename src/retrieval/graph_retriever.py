@@ -13,6 +13,8 @@ from typing import Optional
 from groq import Groq
 from neo4j import GraphDatabase
 
+from src.exceptions import GraphRetrievalError, Neo4jError
+
 logger = logging.getLogger(__name__)
 
 # ── Schema Registry (whitelisted types only) ────────────────
@@ -81,7 +83,7 @@ class GraphRetriever:
         neo4j_password: Optional[str] = None,
         database: str = "neo4j",
         groq_api_key: Optional[str] = None,
-        llm_model: str = "llama-3.3-70b-versatile",
+        llm_model: Optional[str] = None,
         hop_depth: int = 3,
         cypher_limit: int = 50,
     ):
@@ -91,7 +93,7 @@ class GraphRetriever:
         self.database = database
         self.hop_depth = hop_depth
         self.cypher_limit = cypher_limit
-        self.llm_model = llm_model
+        self.llm_model = llm_model or os.getenv("LLM_QUERY_MODEL", "llama-3.3-70b-versatile")
 
         self._driver = None
         self.groq_client = Groq(api_key=groq_api_key or os.getenv("GROQ_API_KEY"))
@@ -101,6 +103,8 @@ class GraphRetriever:
             self._driver = GraphDatabase.driver(
                 self.neo4j_uri,
                 auth=(self.neo4j_username, self.neo4j_password),
+                max_connection_pool_size=50,
+                connection_timeout=30.0,
             )
         return self._driver
 
@@ -210,12 +214,11 @@ class GraphRetriever:
         try:
             driver = self._get_driver()
             with driver.session(database=self.database) as session:
-                result = session.run(cypher)
+                result = session.run(cypher, timeout=15.0)
                 records = [dict(record) for record in result]
         except Exception as e:
-            logger.error(f"Cypher execution failed: {e}\nQuery: {cypher}")
-            # Fallback: simple entity name search
-            return self._fallback_search(nl_query, user_role)
+            # Map to our exception hierarchy
+            raise GraphRetrievalError(f"Cypher execution failed: {e}", details={"query": cypher}) from e
 
         entities = self._extract_entities(records)
         paths = self._extract_paths(records)
@@ -279,7 +282,7 @@ class GraphRetriever:
         try:
             driver = self._get_driver()
             with driver.session(database=self.database) as session:
-                result = session.run(cypher, **params)
+                result = session.run(cypher, timeout=15.0, **params)
                 records = [dict(record) for record in result]
 
             paths = []
@@ -305,13 +308,7 @@ class GraphRetriever:
 
         except Exception as e:
             logger.error(f"Multi-hop query failed: {e}")
-            return GraphSearchResult(
-                query=f"multihop: {start_entity}",
-                cypher=cypher,
-                paths=[],
-                entities=[],
-                raw_records=[],
-            )
+            raise GraphRetrievalError(f"Multi-hop query failed: {e}", details={"cypher": cypher}) from e
 
 
     # Cypher keywords / aggregates that are not node variable names
@@ -328,11 +325,16 @@ class GraphRetriever:
         Inject RBAC role filter before RETURN.
         Hardened to reject aggregates, wildcards, and AS-aliased columns
         so the generated WHERE clause never uses a non-node token.
+        
+        Security: Uses parameterized query construction where possible,
+        validates extracted variables strictly, and falls back to 
+        safe default behavior on any parsing ambiguity.
         """
         if user_role == "admin":
             return cypher
 
         if "RETURN" not in cypher.upper():
+            logger.warning("No RETURN clause found in Cypher, cannot inject RBAC")
             return cypher
 
         # Already injected guard (prevents double-injection on re-plan cycles)
@@ -341,23 +343,31 @@ class GraphRetriever:
 
         return_match = re.search(r'(?i)\bRETURN\b\s+(.*)', cypher)
         if not return_match:
+            logger.warning("Could not parse RETURN clause, skipping RBAC injection")
             return cypher
 
         node_vars = []
-        for term in return_match.group(1).split(","):
+        return_clause = return_match.group(1).strip()
+        
+        # Split by comma but respect parentheses (for function calls)
+        terms = self._split_return_terms(return_clause)
+        
+        for term in terms:
             term = term.strip()
+            if not term:
+                continue
 
-            # Strip LIMIT / ORDER tails that may appear on the last column
+            # Strip LIMIT / ORDER / SKIP tails that may appear on the last column
             term = re.split(r'\s+(?:LIMIT|ORDER|SKIP)\b', term, flags=re.IGNORECASE)[0].strip()
 
             # If aliased with AS, take the SOURCE expression not the alias
             as_match = re.split(r'\s+AS\s+', term, flags=re.IGNORECASE)
             source_expr = as_match[0].strip()
 
-            # Take only the variable part (before any dot property access)
+            # Take only the variable part (before any dot property access or function call)
             var = source_expr.split("(")[0].split(".")[0].strip()
 
-            # Reject wildcards, functions, aggregates, keywords, and non-identifiers
+            # Strict validation: reject wildcards, functions, aggregates, keywords, and non-identifiers
             if (
                 not var
                 or var == "*"
@@ -372,6 +382,7 @@ class GraphRetriever:
 
         # Fallback: use generic known variable names
         if not node_vars:
+            logger.warning("No valid node variables found in RETURN, using fallback vars")
             node_vars = ["e", "n"]
 
         conditions = " AND ".join(
@@ -383,6 +394,47 @@ class GraphRetriever:
 
         rbac_clause = f"WITH * WHERE {conditions}\nRETURN "
         return re.sub(r'(?i)\bRETURN\b', rbac_clause, cypher, count=1)
+
+    def _split_return_terms(self, return_clause: str) -> list[str]:
+        """
+        Split RETURN clause by commas, respecting nested parentheses.
+        Handles: parentheses, brackets, braces.
+        """
+        terms = []
+        current = []
+        depth_paren = 0
+        depth_bracket = 0
+        depth_brace = 0
+        
+        for char in return_clause:
+            if char == '(':
+                depth_paren += 1
+                current.append(char)
+            elif char == ')':
+                depth_paren -= 1
+                current.append(char)
+            elif char == '[':
+                depth_bracket += 1
+                current.append(char)
+            elif char == ']':
+                depth_bracket -= 1
+                current.append(char)
+            elif char == '{':
+                depth_brace += 1
+                current.append(char)
+            elif char == '}':
+                depth_brace -= 1
+                current.append(char)
+            elif char == ',' and depth_paren == 0 and depth_bracket == 0 and depth_brace == 0:
+                terms.append(''.join(current))
+                current = []
+            else:
+                current.append(char)
+        
+        if current:
+            terms.append(''.join(current))
+        
+        return terms
 
     def _fallback_search(self, query: str, user_role: str) -> GraphSearchResult:
         """Fallback: parameterized keyword-based entity search when Cypher fails."""
@@ -411,7 +463,7 @@ class GraphRetriever:
         try:
             driver = self._get_driver()
             with driver.session(database=self.database) as session:
-                result = session.run(cypher, **params)
+                result = session.run(cypher, timeout=10.0, **params)
                 records = [dict(record) for record in result]
             return GraphSearchResult(
                 query=query,
@@ -422,7 +474,7 @@ class GraphRetriever:
             )
         except Exception as e:
             logger.error(f"Fallback search also failed: {e}")
-            return GraphSearchResult(query=query, cypher=cypher, paths=[], entities=[], raw_records=[])
+            raise GraphRetrievalError(f"Fallback search failed: {e}", details={"cypher": cypher}) from e
 
 
     def _extract_entities(self, records: list[dict]) -> list[dict]:

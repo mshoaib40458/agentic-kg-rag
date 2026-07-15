@@ -67,12 +67,12 @@ class QueryPlanner:
 
     def __init__(
         self,
-        model: str = "llama-3.3-70b-versatile",
+        model: Optional[str] = None,
         api_key: Optional[str] = None,
         groq_client=None,
         temperature: float = 0.0,
     ):
-        self.model = model
+        self.model = model or os.getenv("LLM_QUERY_MODEL", "llama-3.3-70b-versatile")
         self.temperature = temperature
         # Prefer injected singleton; fall back to creating one from env
         self.client = groq_client or Groq(api_key=api_key or os.getenv("GROQ_API_KEY"))

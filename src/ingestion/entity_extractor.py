@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
-from groq import Groq
+from groq import AsyncGroq
 
 logger = logging.getLogger(__name__)
 
@@ -66,15 +66,15 @@ class EntityExtractor:
 
     def __init__(
         self,
-        model: str = "llama-3.1-8b-instant",
+        model: Optional[str] = None,
         api_key: Optional[str] = None,
         temperature: float = 0.0,
     ):
-        self.model = model
+        self.model = model or os.getenv("LLM_INGEST_MODEL", "llama-3.1-8b-instant")
         self.temperature = temperature
-        self.client = Groq(api_key=api_key or os.getenv("GROQ_API_KEY"))
+        self.client = AsyncGroq(api_key=api_key or os.getenv("GROQ_API_KEY"))
 
-    def extract_from_chunk(self, chunk, max_retries: int = 2) -> list[ExtractedEntity]:
+    async def extract_from_chunk(self, chunk, max_retries: int = 2) -> list[ExtractedEntity]:
         """
         Extract entities from a single DocumentChunk.
 
@@ -88,7 +88,7 @@ class EntityExtractor:
             try:
                 prompt = EXTRACTION_PROMPT.format(text=chunk.content[:3000])  # Limit token usage
 
-                response = self.client.chat.completions.create(
+                response = await self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=self.temperature,
@@ -127,14 +127,24 @@ class EntityExtractor:
         
         return []
 
-    def extract_from_chunks(self, chunks: list) -> list[ExtractedEntity]:
-        """Extract entities from a list of chunks."""
+    async def extract_from_chunks(self, chunks: list) -> list[ExtractedEntity]:
+        """Extract entities from a list of chunks concurrently."""
+        import asyncio
+        semaphore = asyncio.Semaphore(10)
+
+        async def bounded_extract(chunk):
+            async with semaphore:
+                return await self.extract_from_chunk(chunk)
+
+        tasks = [bounded_extract(chunk) for chunk in chunks]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
         all_entities = []
-        for i, chunk in enumerate(chunks):
-            entities = self.extract_from_chunk(chunk)
-            all_entities.extend(entities)
-            if (i + 1) % 10 == 0:
-                logger.info(f"Entity extraction progress: {i + 1}/{len(chunks)} chunks")
+        for res in results:
+            if isinstance(res, list):
+                all_entities.extend(res)
+            elif isinstance(res, Exception):
+                logger.error(f"Entity extraction batch error: {res}")
 
         logger.info(f"Total entities extracted: {len(all_entities)} from {len(chunks)} chunks")
         return all_entities

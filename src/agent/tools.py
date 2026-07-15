@@ -29,13 +29,13 @@ class AgentTools:
         graph_retriever,
         embedder,
         groq_client,
-        llm_model: str = "llama-3.3-70b-versatile",
+        llm_model: Optional[str] = None,
     ):
         self.vector_store = vector_store
         self.graph_retriever = graph_retriever
         self.embedder = embedder
         self.groq_client = groq_client
-        self.llm_model = llm_model
+        self.llm_model = llm_model or os.getenv("LLM_QUERY_MODEL", "llama-3.3-70b-versatile")
 
     # ── Tool 1: Vector Search ──────────────────────────────────
 
@@ -161,7 +161,7 @@ Format: [{{"name": "...", "type": "Person|Team|System|Policy|Incident|Date|Docum
 Text: {text}"""
 
             response = self.groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model=os.getenv("LLM_INGEST_MODEL", "llama-3.1-8b-instant"),
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=512,

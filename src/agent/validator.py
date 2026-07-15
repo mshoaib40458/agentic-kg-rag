@@ -57,7 +57,7 @@ class ResultValidator:
             issues.append("Insufficient vector search results")
 
         # For multi-hop queries, graph paths are expected (not just entities)
-        if query_type in ("multi-hop", "comparative") and iteration_count == 1:
+        if query_type in ("multi-hop", "comparative"):
             # Count only path-type results (dicts with path_string key)
             path_results = [r for r in graph_results if isinstance(r, dict) and "path_string" in r]
             if len(path_results) == 0:

@@ -48,12 +48,12 @@ class AnswerSynthesizer:
 
     def __init__(
         self,
-        model: str = "llama-3.3-70b-versatile",
+        model: Optional[str] = None,
         api_key: Optional[str] = None,
         groq_client=None,
         temperature: float = 0.1,
     ):
-        self.model = model
+        self.model = model or os.getenv("LLM_QUERY_MODEL", "llama-3.3-70b-versatile")
         self.temperature = temperature
         # Prefer injected singleton; fall back to creating one from env
         self.client = groq_client or Groq(api_key=api_key or os.getenv("GROQ_API_KEY"))
@@ -216,8 +216,9 @@ class AnswerSynthesizer:
         )
         try:
             # Use the shared client but a cheaper, faster model with tight token cap
+            re_prompt_model = os.getenv("LLM_INGEST_MODEL", "llama-3.1-8b-instant")
             response = self.client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model=re_prompt_model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=128,  # Citations are short; cap to prevent runaway latency

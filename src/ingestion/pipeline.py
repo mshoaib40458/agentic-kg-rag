@@ -47,7 +47,7 @@ class IngestionPipeline:
         chunk_size: int = 512,
         chunk_overlap: int = 50,
         embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
-        llm_model: str = "llama-3.1-8b-instant",
+        llm_model: Optional[str] = None,
         groq_api_key: Optional[str] = None,
         neo4j_uri: Optional[str] = None,
         neo4j_username: Optional[str] = None,
@@ -63,8 +63,10 @@ class IngestionPipeline:
         # Prefer injected singleton to avoid reloading the model on every request
         self.embedder = embedder or DocumentEmbedder(model_name=embedding_model)
 
+        resolved_llm_model = llm_model or os.getenv("LLM_INGEST_MODEL", "llama-3.1-8b-instant")
+        
         self.entity_extractor = EntityExtractor(
-            model=llm_model,
+            model=resolved_llm_model,
             api_key=groq_api_key or os.getenv("GROQ_API_KEY"),
         )
         self.relation_extractor = RelationExtractor(
@@ -77,7 +79,7 @@ class IngestionPipeline:
             password=neo4j_password,
         )
 
-    def ingest_file(
+    async def ingest_file(
         self,
         file_path: str,
         metadata: Optional[dict] = None,
@@ -130,7 +132,7 @@ class IngestionPipeline:
             if self.run_kg_extraction and chunks:
                 try:
                     logger.info(f"  [4/5] Running NER on {len(chunks)} chunks...")
-                    entities = self.entity_extractor.extract_from_chunks(chunks)
+                    entities = await self.entity_extractor.extract_from_chunks(chunks)
 
                     # Group entities by chunk_id for relation extraction
                     entities_by_chunk = {}
@@ -138,7 +140,7 @@ class IngestionPipeline:
                         entities_by_chunk.setdefault(ent.source_chunk_id, []).append(ent)
                     
                     logger.info(f"  [5/5] Running RE and building KG...")
-                    relationships = self.relation_extractor.extract_from_chunks(chunks, entities_by_chunk)
+                    relationships = await self.relation_extractor.extract_from_chunks(chunks, entities_by_chunk)
 
                     # Setup schema once then write
                     self.kg_builder.setup_schema()
@@ -156,7 +158,7 @@ class IngestionPipeline:
             # Save FAISS index once (batch save — avoids O(n) incremental writes)
             if self.vector_store and chunks and vector_chunks_saved:
                 try:
-                    self.vector_store.save()
+                    await self.vector_store.save_async()
                     logger.info("  [✓] FAISS index saved to disk")
                 except Exception as e:
                     logger.error(f"  [✗] FAISS save failed: {e} — ingestion incomplete")
@@ -188,7 +190,7 @@ class IngestionPipeline:
                 duration_seconds=0.0,
             )
 
-    def ingest_directory(
+    async def ingest_directory(
         self,
         dir_path: str,
         metadata: Optional[dict] = None,
@@ -207,7 +209,7 @@ class IngestionPipeline:
         totals = IngestionResult(0, 0, 0, 0, [], 0.0)
 
         for file_path in files:
-            result = self.ingest_file(str(file_path), metadata, access_roles)
+            result = await self.ingest_file(str(file_path), metadata, access_roles)
             totals.total_documents += result.total_documents
             totals.total_chunks += result.total_chunks
             totals.total_entities += result.total_entities

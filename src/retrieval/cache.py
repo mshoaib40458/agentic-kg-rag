@@ -30,7 +30,7 @@ class QueryCache:
         self._client = None
         self._available = False
 
-    def _get_client(self):
+    async def _get_client(self):
         """Lazy Redis connection. Re-attempts if previously unavailable (self-healing)."""
         # Already connected and healthy
         if self._client is not None and self._available:
@@ -41,11 +41,11 @@ class QueryCache:
         self._client = None
         self._available = False
         try:
-            import redis
+            import redis.asyncio as redis
             client = redis.Redis.from_url(
                 self.redis_url, decode_responses=True, socket_connect_timeout=2
             )
-            client.ping()  # Verify connection is live before storing
+            await client.ping()  # Verify connection is live before storing
             self._client = client
             self._available = True
             logger.info(f"✓ Redis cache connected: {self.redis_url}")
@@ -54,86 +54,89 @@ class QueryCache:
             # self._client and self._available already reset above
         return self._client
 
-    def _make_key(self, query: str, user_id: str) -> str:
-        """Generate a user-scoped cache key."""
-        raw = f"{user_id}:{query.strip().lower()}"
+    def _make_key(self, query: str, user_id: str, session_id: str = "", top_k: int = 10) -> str:
+        """Generate a user-scoped cache key with session and top_k for cache isolation."""
+        raw = f"{user_id}:{session_id}:{top_k}:{query.strip().lower()}"
         digest = hashlib.sha256(raw.encode()).hexdigest()
         return f"kgrag:query:{digest}"
 
-    def get(self, query: str, user_id: str) -> Optional[dict]:
+    async def get(self, query: str, user_id: str, session_id: str = "", top_k: int = 10) -> Optional[dict]:
         """
         Retrieve cached agent state for a query+user pair.
 
         Returns:
             Cached state dict if hit, None on miss or error.
         """
-        client = self._get_client()
+        client = await self._get_client()
         if not self._available or client is None:
             return None
         try:
-            key = self._make_key(query, user_id)
-            raw = client.get(key)
+            key = self._make_key(query, user_id, session_id, top_k)
+            raw = await client.get(key)
             if raw is None:
                 return None
             state = json.loads(raw)
-            logger.info(f"Cache HIT for query='{query[:60]}' user_id={user_id}")
+            logger.info(f"Cache HIT for query='{query[:60]}' user_id={user_id} session_id={session_id[:8]}")
             return state
         except Exception as e:
             logger.warning(f"Cache get failed: {e}")
             return None
 
-    def set(self, query: str, user_id: str, state: dict) -> bool:
+    async def set(self, query: str, user_id: str, state: dict, session_id: str = "", top_k: int = 10) -> bool:
         """
         Cache the agent state for a query+user pair.
 
         Returns:
             True if cached successfully, False otherwise.
         """
-        client = self._get_client()
+        client = await self._get_client()
         if not self._available or client is None:
             return False
         try:
-            key = self._make_key(query, user_id)
+            key = self._make_key(query, user_id, session_id, top_k)
             # Serialize state — skip non-serializable keys gracefully
             serializable = {k: v for k, v in state.items() if _is_json_serializable(v)}
-            client.setex(key, self.ttl, json.dumps(serializable, default=str))
-            logger.info(f"Cache SET for query='{query[:60]}' user_id={user_id} ttl={self.ttl}s")
+            await client.setex(key, self.ttl, json.dumps(serializable, default=str))
+            logger.info(f"Cache SET for query='{query[:60]}' user_id={user_id} session_id={session_id[:8]} ttl={self.ttl}s")
             return True
         except Exception as e:
             logger.warning(f"Cache set failed: {e}")
             return False
 
-    def invalidate(self, query: str, user_id: str) -> bool:
+    async def invalidate(self, query: str, user_id: str, session_id: str = "", top_k: int = 10) -> bool:
         """Delete a specific cache entry."""
-        client = self._get_client()
+        client = await self._get_client()
         if not self._available or client is None:
             return False
         try:
-            key = self._make_key(query, user_id)
-            client.delete(key)
+            key = self._make_key(query, user_id, session_id, top_k)
+            await client.delete(key)
             return True
         except Exception as e:
             logger.warning(f"Cache invalidate failed: {e}")
             return False
 
-    def flush_all(self) -> bool:
+    async def flush_all(self) -> bool:
         """Flush all KG-RAG cache entries (admin use only)."""
-        client = self._get_client()
+        client = await self._get_client()
         if not self._available or client is None:
             return False
         try:
-            keys = client.keys("kgrag:query:*")
+            keys = await client.keys("kgrag:query:*")
             if keys:
-                client.delete(*keys)
+                await client.delete(*keys)
             logger.info(f"Cache flushed: {len(keys)} entries removed")
             return True
         except Exception as e:
             logger.warning(f"Cache flush failed: {e}")
             return False
 
+    async def check_available(self) -> bool:
+        await self._get_client()
+        return self._available
+    
     @property
     def is_available(self) -> bool:
-        self._get_client()
         return self._available
 
 

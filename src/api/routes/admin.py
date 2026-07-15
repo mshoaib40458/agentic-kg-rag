@@ -68,7 +68,7 @@ async def get_stats(current_user: TokenData = Depends(require_admin)):
         vector_store=vs_stats,
         graph_store=gs_stats,
         audit_log_size=audit_log_size,
-        cache_available=query_cache.is_available,
+        cache_available=await query_cache.check_available(),
     )
 
 
@@ -98,7 +98,9 @@ async def create_new_user(
     if request.role not in allowed_roles:
         raise HTTPException(status_code=400, detail=f"Role must be one of: {allowed_roles}")
     try:
-        user = create_user(request.username, request.password, request.role)
+        import asyncio
+        loop = asyncio.get_running_loop()
+        user = await loop.run_in_executor(None, create_user, request.username, request.password, request.role)
         audit_logger.log_query(
             user_id=current_user.user_id,
             user_role=current_user.role,
@@ -171,7 +173,7 @@ async def delete_document(
             entities_removed = -1  # Indicate partial failure
 
     # 3. Flush related cache entries (flush all since we don't track per-doc)
-    query_cache.flush_all()
+    await query_cache.flush_all()
 
     audit_logger.log_ingestion(
         user_id=current_user.user_id,
@@ -195,5 +197,5 @@ async def delete_document(
 @router.post("/cache/flush")
 async def flush_cache(current_user: TokenData = Depends(require_admin)):
     """Flush all query result cache entries. Admin only."""
-    success = query_cache.flush_all()
+    success = await query_cache.flush_all()
     return {"status": "flushed" if success else "cache_unavailable"}

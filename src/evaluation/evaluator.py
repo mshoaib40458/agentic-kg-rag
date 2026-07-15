@@ -67,13 +67,13 @@ class KGRAGEvaluator:
         orchestrator=None,
         baseline_retriever=None,
         groq_api_key: Optional[str] = None,
-        llm_model: str = "llama-3.3-70b-versatile",
+        llm_model: Optional[str] = None,
         vector_store=None,
         embedder=None,
     ):
         self.orchestrator = orchestrator
         self.baseline_retriever = baseline_retriever
-        self.llm_model = llm_model
+        self.llm_model = llm_model or os.getenv("LLM_QUERY_MODEL", "llama-3.3-70b-versatile")
         self.vector_store = vector_store
         self.embedder = embedder
         self._groq = None
@@ -140,7 +140,7 @@ Generated Answer: {result.generated_answer}
 
         try:
             response = self._groq.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model=os.getenv("LLM_INGEST_MODEL", "llama-3.1-8b-instant"),
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0, max_tokens=256,
             )
@@ -226,7 +226,7 @@ Generated Answer: {result.generated_answer}
         baseline = BaselineRAG(
             vector_store=self.vector_store,
             embedder=self.embedder,
-            llm_model="llama-3.1-8b-instant",
+            llm_model=os.getenv("LLM_INGEST_MODEL", "llama-3.1-8b-instant"),
         )
         results = []
         for query_obj in eval_set:

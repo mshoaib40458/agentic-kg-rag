@@ -30,7 +30,10 @@ class _BcryptContext:
         # Validate bcrypt 72-byte limit before hashing
         encoded = password.encode("utf-8")
         if len(encoded) > 72:
-            logger.warning(f"Password exceeds 72 bytes and will be truncated. Use shorter password.")
+            logger.warning(
+                f"Password exceeds 72 bytes when UTF-8 encoded ({len(encoded)} bytes). "
+                f"Only first 72 bytes will be used. Consider a shorter password to avoid truncation."
+            )
         return bcrypt.hashpw(encoded[:72], bcrypt.gensalt()).decode("utf-8")
         
     def verify(self, plain: str, hashed: str) -> bool:
@@ -223,6 +226,15 @@ def create_user(username: str, password: str, role: str = "user") -> dict:
         users = _load_users()
         if username in users:
             raise ValueError(f"User '{username}' already exists")
+        
+        # Check bcrypt 72-byte limit
+        encoded = password.encode("utf-8")
+        if len(encoded) > 72:
+            logger.warning(
+                f"Password for user '{username}' exceeds 72 bytes when UTF-8 encoded. "
+                f"Only first 72 bytes will be used. Consider a shorter password to avoid truncation."
+            )
+        
         user = {
             "username": username,
             "hashed_password": get_password_hash(password),

@@ -2,6 +2,11 @@
 Audit Logger — Phase 8
 Structured JSON audit trail for all system events.
 Logs: queries, retrieved chunks, graph paths, reasoning steps, prompts, LLM outputs.
+Configurable via env vars:
+  AUDIT_LOG_PATH: output file path (default: logs/audit.jsonl)
+  AUDIT_LOG_LEVEL: log level (default: INFO)
+  AUDIT_JSON_INDENT: pretty-print JSON (default: false)
+  AUDIT_CONSOLE: also log to console (default: false)
 """
 
 import json
@@ -13,19 +18,31 @@ from typing import Any, Optional
 
 import structlog
 
-# ── Setup structured logging ────────────────────────────────────
+# ── Configurable via env vars ───────────────────────────────────────
 LOG_PATH = Path(os.getenv("AUDIT_LOG_PATH", "logs/audit.jsonl"))
+LOG_LEVEL = getattr(logging, os.getenv("AUDIT_LOG_LEVEL", "INFO").upper(), logging.INFO)
+JSON_INDENT = int(os.getenv("AUDIT_JSON_INDENT", "0"))  # 0 = compact, >0 = pretty
+LOG_TO_CONSOLE = os.getenv("AUDIT_CONSOLE", "false").lower() == "true"
+
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _configure_structlog():
+    """Configure structlog with environment-driven settings."""
+    processors = [
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+    ]
+    
+    # Add JSON renderer (compact or pretty)
+    if JSON_INDENT > 0:
+        processors.append(structlog.processors.JSONRenderer(indent=JSON_INDENT))
+    else:
+        processors.append(structlog.processors.JSONRenderer())
+    
     structlog.configure(
-        processors=[
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.add_logger_name,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.JSONRenderer(),
-        ],
+        processors=processors,
         wrapper_class=structlog.stdlib.BoundLogger,
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
@@ -33,12 +50,23 @@ def _configure_structlog():
 
 
 _configure_structlog()
+
+# ── File handler (always enabled) ───────────────────────────────────
 _file_handler = logging.FileHandler(LOG_PATH, encoding="utf-8")
 _file_handler.setFormatter(logging.Formatter("%(message)s"))
 
+# ── Optional console handler ────────────────────────────────────────
+if LOG_TO_CONSOLE:
+    _console_handler = logging.StreamHandler()
+    _console_handler.setFormatter(logging.Formatter("%(message)s"))
+else:
+    _console_handler = None
+
 _audit_logger = logging.getLogger("audit")
 _audit_logger.addHandler(_file_handler)
-_audit_logger.setLevel(logging.INFO)
+if _console_handler:
+    _audit_logger.addHandler(_console_handler)
+_audit_logger.setLevel(LOG_LEVEL)
 _audit_logger.propagate = False
 
 

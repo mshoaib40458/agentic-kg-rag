@@ -103,3 +103,14 @@ def safe_call(func, fallback, *args, **kwargs):
     except (RetryError, Exception) as e:
         logger.warning(f"safe_call fallback triggered for {func.__name__}: {e}")
         return fallback
+
+async def async_safe_call(func, fallback, *args, **kwargs):
+    """
+    Call await func(*args, **kwargs); return fallback value on any exception.
+    """
+    try:
+        return await func(*args, **kwargs)
+    except (RetryError, Exception) as e:
+        logger.warning(f"async_safe_call fallback triggered for {func.__name__}: {e}")
+        return fallback
+

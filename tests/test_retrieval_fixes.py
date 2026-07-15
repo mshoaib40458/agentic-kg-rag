@@ -41,7 +41,8 @@ def test_hybrid_retriever_dynamic_score():
     assert merged2[0].graph_score == 0.95
 
 
-def test_cache_reconnect():
+@pytest.mark.asyncio
+async def test_cache_reconnect():
     cache = QueryCache(redis_url="redis://localhost:6379/0", ttl_seconds=3600)
     # Simulate a cache that was previously connected but is now unavailable
     cache._client = "dummy_dead_client"
@@ -50,6 +51,6 @@ def test_cache_reconnect():
     # Call _get_client() should trigger reconnection (reset _client to None and attempt new connection)
     # Assuming redis server isn't running on the exact test port, it should fail gracefully 
     # but the crucial buggy behavior was returning the dead client itself.
-    client = cache._get_client()
+    client = await cache._get_client()
     assert client is None
     assert cache.is_available is False

@@ -6,7 +6,7 @@ Flow: START → Planner → Executor → Validator → (Replan? → Planner) →
 
 import logging
 import uuid
-from typing import Literal
+from typing import Literal, Optional
 
 from langgraph.graph import END, START, StateGraph
 
@@ -16,6 +16,7 @@ from src.agent.state import AgentState
 from src.agent.synthesizer import AnswerSynthesizer
 from src.agent.tools import AgentTools
 from src.agent.validator import ResultValidator
+from src.exceptions import KGException, GraphRetrievalError
 
 logger = logging.getLogger(__name__)
 
@@ -59,21 +60,25 @@ class AgentOrchestrator:
         graph_retriever,
         embedder,
         groq_client,
-        llm_model: str = "llama-3.3-70b-versatile",
-        ingest_model: str = "llama-3.1-8b-instant",
+        llm_model: Optional[str] = None,
+        ingest_model: Optional[str] = None,
         hybrid_retriever=None,
         reranker=None,
     ):
+        # Resolve model names from config/env
+        resolved_llm_model = llm_model or os.getenv("LLM_QUERY_MODEL", "llama-3.3-70b-versatile")
+        resolved_ingest_model = ingest_model or os.getenv("LLM_INGEST_MODEL", "llama-3.1-8b-instant")
+        
         # Initialize components
         self.tools = AgentTools(
             vector_store=vector_store,
             graph_retriever=graph_retriever,
             embedder=embedder,
             groq_client=groq_client,
-            llm_model=llm_model,
+            llm_model=resolved_llm_model,
         )
         # Pass shared groq_client to planner and synthesizer (ARCH A4/A5 fix)
-        self.planner = QueryPlanner(model=llm_model, groq_client=groq_client)
+        self.planner = QueryPlanner(model=resolved_llm_model, groq_client=groq_client)
         self.executor = PlanExecutor(
             tools=self.tools,
             hybrid_retriever=hybrid_retriever,
@@ -114,7 +119,7 @@ class AgentOrchestrator:
 
         return workflow.compile()
 
-    def run(
+    async def run(
         self,
         query: str,
         user_id: str = "anonymous",
@@ -166,18 +171,34 @@ class AgentOrchestrator:
         logger.info(f"Agent run started: query='{_preview}' user_role={user_role}")
 
         try:
-            final_state = self.graph.invoke(initial_state)
+            final_state = await self.graph.ainvoke(initial_state)
             logger.info(
                 f"Agent run complete: confidence={final_state.get('confidence', 0):.2f}, "
                 f"citations={len(final_state.get('citations', []))}, "
                 f"iterations={final_state.get('iteration_count', 0)}"
             )
             return final_state
-        except Exception as e:
+        except GraphRetrievalError as e:
+            logger.error(f"Graph retrieval failed: {e}")
+            return {
+                **initial_state,
+                "final_answer": "The knowledge graph is temporarily unavailable. Please try again.",
+                "error": str(e),
+                "fallback_used": True,
+            }
+        except KGException as e:
             logger.error(f"Agent orchestration failed: {e}")
             return {
                 **initial_state,
                 "final_answer": f"The agent encountered an error: {e}. Please retry.",
+                "error": str(e),
+                "fallback_used": True,
+            }
+        except Exception as e:
+            logger.exception(f"Unexpected agent orchestration failure: {e}")
+            return {
+                **initial_state,
+                "final_answer": "An unexpected error occurred. Please retry.",
                 "error": str(e),
                 "fallback_used": True,
             }
@@ -222,10 +243,8 @@ class AgentOrchestrator:
         }
 
         try:
-            # Run sync graph in thread pool to avoid blocking the async event loop
-            import asyncio
-            loop = asyncio.get_running_loop()
-            final_state = await loop.run_in_executor(None, self.graph.invoke, initial_state)
+            # Run async graph directly
+            final_state = await self.graph.ainvoke(initial_state)
             
             # Stream reasoning trace
             for step in final_state.get("reasoning_trace", []):
@@ -241,6 +260,12 @@ class AgentOrchestrator:
                 "sources": final_state.get("sources", []),
             }
 
-        except Exception as e:
-            logger.error(f"Stream failed: {e}")
+        except GraphRetrievalError as e:
+            logger.error(f"Stream graph retrieval failed: {e}")
+            yield {"type": "error", "content": "The knowledge graph is temporarily unavailable. Please try again."}
+        except KGException as e:
+            logger.error(f"Stream agent error: {e}")
             yield {"type": "error", "content": str(e)}
+        except Exception as e:
+            logger.exception(f"Unexpected stream failure: {e}")
+            yield {"type": "error", "content": "An unexpected error occurred. Please retry."}

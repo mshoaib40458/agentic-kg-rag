@@ -55,12 +55,12 @@ class BaselineRAG:
         vector_store=None,
         embedder=None,
         groq_api_key: Optional[str] = None,
-        llm_model: str = "llama-3.1-8b-instant",
+        llm_model: Optional[str] = None,
         top_k: int = 5,
     ):
         self.vector_store = vector_store
         self.embedder = embedder
-        self.llm_model = llm_model
+        self.llm_model = llm_model or os.getenv("LLM_INGEST_MODEL", "llama-3.1-8b-instant")
         self.top_k = top_k
         self._groq = None
         api_key = groq_api_key or os.getenv("GROQ_API_KEY")

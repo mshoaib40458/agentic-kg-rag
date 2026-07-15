@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-from groq import Groq
+from groq import AsyncGroq
 from src.ingestion.entity_extractor import ExtractedEntity
 
 logger = logging.getLogger(__name__)
@@ -79,15 +79,15 @@ class RelationExtractor:
 
     def __init__(
         self,
-        model: str = "llama-3.1-8b-instant",
+        model: str = None,
         api_key: Optional[str] = None,
         temperature: float = 0.0,
     ):
-        self.model = model
+        self.model = model or os.getenv("LLM_INGEST_MODEL", "llama-3.1-8b-instant")
         self.temperature = temperature
-        self.client = Groq(api_key=api_key or os.getenv("GROQ_API_KEY"))
+        self.client = AsyncGroq(api_key=api_key or os.getenv("GROQ_API_KEY"))
 
-    def extract_from_chunk(
+    async def extract_from_chunk(
         self,
         chunk,
         entities: list[ExtractedEntity],
@@ -116,7 +116,7 @@ class RelationExtractor:
                     text=chunk.content[:3000],
                 )
 
-                response = self.client.chat.completions.create(
+                response = await self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=self.temperature,
@@ -158,19 +158,31 @@ class RelationExtractor:
         
         return []
 
-    def extract_from_chunks(
+    async def extract_from_chunks(
         self,
         chunks: list,
         entities_by_chunk: dict[str, list[ExtractedEntity]],
     ) -> list[ExtractedRelationship]:
-        """Extract relationships across all chunks."""
-        all_relationships = []
-        for i, chunk in enumerate(chunks):
+        """Extract relationships across all chunks concurrently."""
+        import asyncio
+        semaphore = asyncio.Semaphore(10)
+
+        async def bounded_extract(chunk):
             entities = entities_by_chunk.get(chunk.chunk_id, [])
-            relationships = self.extract_from_chunk(chunk, entities)
-            all_relationships.extend(relationships)
-            if (i + 1) % 10 == 0:
-                logger.info(f"Relation extraction: {i + 1}/{len(chunks)} chunks")
+            if not entities:
+                return []
+            async with semaphore:
+                return await self.extract_from_chunk(chunk, entities)
+
+        tasks = [bounded_extract(chunk) for chunk in chunks]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_relationships = []
+        for res in results:
+            if isinstance(res, list):
+                all_relationships.extend(res)
+            elif isinstance(res, Exception):
+                logger.error(f"Relation extraction batch error: {res}")
 
         logger.info(f"Total relationships extracted: {len(all_relationships)}")
         return all_relationships
