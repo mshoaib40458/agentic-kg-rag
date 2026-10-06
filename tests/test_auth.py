@@ -12,7 +12,7 @@ from unittest.mock import patch
 def test_authenticate_valid_admin(set_test_env):
     """Admin credentials from env should authenticate successfully."""
     from src.security.auth import authenticate_user
-    user = authenticate_user("admin", os.getenv("ADMIN_PASSWORD", "admin123"))
+    user = authenticate_user("admin", os.getenv("ADMIN_PASSWORD", "TestAdminPass123!XY"))
     assert user is not None
     assert user["role"] == "admin"
     assert user["username"] == "admin"

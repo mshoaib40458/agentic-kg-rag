@@ -21,9 +21,18 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-this-in-production-minimum-32-chars-required")
+# SECRET_KEY is validated at startup in src/api/main.py:_validate_configuration()
+# JWT_ALGORITHM defaults to HS256 — do not override unless you know what you're doing
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "24"))
+
+if not SECRET_KEY:
+    logger.warning(
+        "JWT_SECRET_KEY not set via environment variable. "
+        "Ensure it is configured before the app starts — "
+        "src/api/main.py:_validate_configuration() will raise RuntimeError if missing or < 32 chars."
+    )
 
 class _BcryptContext:
     def hash(self, password: str) -> str:

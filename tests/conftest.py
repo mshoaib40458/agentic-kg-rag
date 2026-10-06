@@ -27,7 +27,7 @@ def set_test_env(tmp_path_factory):
     os.environ["FAISS_METADATA_PATH"] = str(faiss_meta)
     os.environ["JWT_SECRET_KEY"] = "test-secret-minimum-32-chars-xxxx"
     os.environ["GROQ_API_KEY"] = "test-key"
-    os.environ["REDIS_URL"] = "redis://localhost:9999"  # port that won't connect
+    os.environ["REDIS_URL"] = "redis://localhost:9999"  # high port that won't connect — used to force cache miss behavior in tests
     # Set a valid admin password so initialize_auth() doesn't raise
     os.environ["ADMIN_USERNAME"] = "admin"
     os.environ["ADMIN_PASSWORD"] = "TestAdminPass123!XY"  # 20 chars, satisfies >16 check

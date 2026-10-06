@@ -46,5 +46,11 @@ htmlcov/
 coverage.xml
 reports/
 
+# Exclude AI-generated analysis files from GitHub push
+graph.md
+audit_report.md
+agents.md
+srs kg rag.docx
+
 # Docker
 *.override.yml

@@ -126,13 +126,13 @@ def test_cors_no_wildcard(test_client):
 
 
 def test_jwt_insecure_default_raises():
-    """App startup raises RuntimeError if JWT secret is the default."""
+    """App startup raises RuntimeError if JWT secret is the default or too short."""
     from src.api.main import _validate_configuration
     import os
     import pytest
     
-    # Set the env var to the default insecure value
-    os.environ["JWT_SECRET_KEY"] = "change-this-in-production-minimum-32-chars-required"
+    # Set the env var to a short insecure value (< 32 chars)
+    os.environ["JWT_SECRET_KEY"] = "short"
     
     with pytest.raises(RuntimeError, match="FATAL: JWT_SECRET_KEY"):
         _validate_configuration()

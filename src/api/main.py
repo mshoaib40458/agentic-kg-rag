@@ -57,6 +57,20 @@ def _validate_configuration() -> None:
             "Use at least 32 characters for HS256 security."
         )
 
+    # Also validate ADMIN_PASSWORD early — initialize_auth() will double-check at lifespan
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    if not admin_password:
+        raise RuntimeError(
+            "🚨 FATAL: ADMIN_PASSWORD environment variable is not set. "
+            "Set a strong password (minimum 16 characters) before starting the server. "
+            "The server will refuse to boot with default credentials."
+        )
+    if len(admin_password) < 16:
+        raise RuntimeError(
+            f"🚨 FATAL: ADMIN_PASSWORD is too short ({len(admin_password)} chars). "
+            "Use at least 16 characters for security."
+        )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
